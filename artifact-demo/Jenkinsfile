@@ -1,0 +1,50 @@
+pipeline {
+  agent any
+  tools {
+    maven 'Maven3'
+    jdk 'Java11'
+  }
+  environment {
+    NEXUS_CRED = credentials('nexus-creds')
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        git url: 'https://github.com/your-username/artifact-demo.git', branch: 'main'
+      }
+    }
+    stage('Set Version') {
+      steps {
+        script {
+          def bn = env.BUILD_NUMBER ?: "0"
+          sh "mvn -q versions:set -DnewVersion=1.0.${bn}-SNAPSHOT"
+        }
+      }
+    }
+    stage('Build & Deploy') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'nexus-creds', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+          sh '''
+            mkdir -p $WORKSPACE/.m2
+            cat > $WORKSPACE/.m2/settings.xml <<EOF
+            <settings>
+              <servers>
+                <server>
+                  <id>nexus</id>
+                  <username>${NEXUS_USER}</username>
+                  <password>${NEXUS_PASS}</password>
+                </server>
+              </servers>
+            </settings>
+            EOF
+            mvn -s $WORKSPACE/.m2/settings.xml clean deploy -B
+          '''
+        }
+      }
+    }
+  }
+  post {
+    success { echo "Build & deploy finished." }
+    failure { echo "Build failed." }
+  }
+}
